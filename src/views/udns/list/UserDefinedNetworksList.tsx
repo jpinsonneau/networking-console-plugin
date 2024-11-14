@@ -1,12 +1,13 @@
 import React, { FC } from 'react';
 import { useNavigate } from 'react-router-dom-v5-compat';
+import _ from 'lodash';
 
 import {
   ListPageBody,
-  ListPageCreateButton,
+  ListPageCreateDropdown,
   ListPageFilter,
   ListPageHeader,
-  useK8sWatchResource,
+  useK8sWatchResources,
   useListPageFilter,
   VirtualizedTable,
 } from '@openshift-console/dynamic-plugin-sdk';
@@ -15,8 +16,10 @@ import { DEFAULT_NAMESPACE } from '@utils/constants';
 import { SHARED_DEFAULT_PATH_NEW_RESOURCE_FORM } from '@utils/constants/ui';
 import { useNetworkingTranslation } from '@utils/hooks/useNetworkingTranslation';
 import { resourcePathFromModel } from '@utils/resources/shared';
-import { UserDefinedNetworkKind } from '@utils/resources/udns/types';
+import { ClusterUserDefinedNetworkKind, UserDefinedNetworkKind } from '@utils/resources/udns/types';
 import {
+  ClusterUserDefinedNetworkModel,
+  ClusterUserDefinedNetworkModelGroupVersionKind,
   UserDefinedNetworkModel,
   UserDefinedNetworkModelGroupVersionKind,
 } from '@utils/resources/udns/utils';
@@ -31,19 +34,32 @@ type UserDefinedNetworksListProps = {
 const UserDefinedNetworksList: FC<UserDefinedNetworksListProps> = ({ namespace }) => {
   const { t } = useNetworkingTranslation();
   const navigate = useNavigate();
-
-  const [udns, loaded, loadError] = useK8sWatchResource<UserDefinedNetworkKind[]>({
-    groupVersionKind: UserDefinedNetworkModelGroupVersionKind,
-    isList: true,
-    namespace,
+  const resources = useK8sWatchResources({
+    ClusterUserDefinedNetwork: {
+      groupVersionKind: ClusterUserDefinedNetworkModelGroupVersionKind,
+      isList: true,
+      namespaced: false,
+    },
+    UserDefinedNetwork: {
+      groupVersionKind: UserDefinedNetworkModelGroupVersionKind,
+      isList: true,
+      namespace,
+      namespaced: true,
+    },
   });
-
-  const [data, filteredData, onFilterChange] = useListPageFilter(udns);
+  const loaded = Object.values(resources)
+    .filter((r) => !r.loadError)
+    .every((r) => r.loaded);
+  const loadError = resources.UserDefinedNetwork.loadError;
+  const flatten = _.flatMap(resources, (r) => {
+    return r.data;
+  });
+  const [data, filteredData, onFilterChange] = useListPageFilter(flatten);
   const columns = useUDNColumns();
   const title = t('UserDefinedNetworks');
 
   return (
-    <ListEmptyState<UserDefinedNetworkKind>
+    <ListEmptyState<ClusterUserDefinedNetworkKind | UserDefinedNetworkKind>
       createButtonlink={SHARED_DEFAULT_PATH_NEW_RESOURCE_FORM}
       data={data}
       error={loadError}
@@ -53,28 +69,39 @@ const UserDefinedNetworksList: FC<UserDefinedNetworksListProps> = ({ namespace }
       title={title}
     >
       <ListPageHeader title={title}>
-        <ListPageCreateButton
-          className="list-page-create-button-margin"
+        <ListPageCreateDropdown
           createAccessReview={{
             groupVersionKind: UserDefinedNetworkModelGroupVersionKind,
             namespace,
           }}
-          onClick={() =>
-            navigate(
-              `${resourcePathFromModel(
-                UserDefinedNetworkModel,
-                null,
-                namespace || DEFAULT_NAMESPACE,
-              )}/${SHARED_DEFAULT_PATH_NEW_RESOURCE_FORM}`,
-            )
-          }
+          items={{
+            ClusterUserDefinedNetwork: t('ClusterUserDefinedNetwork'),
+            UserDefinedNetwork: t('UserDefinedNetwork'),
+          }}
+          onClick={(item: string) => {
+            if (item === 'ClusterUserDefinedNetwork') {
+              navigate(
+                `${resourcePathFromModel(
+                  ClusterUserDefinedNetworkModel,
+                )}/${SHARED_DEFAULT_PATH_NEW_RESOURCE_FORM}`,
+              );
+            } else {
+              navigate(
+                `${resourcePathFromModel(
+                  UserDefinedNetworkModel,
+                  null,
+                  namespace || DEFAULT_NAMESPACE,
+                )}/${SHARED_DEFAULT_PATH_NEW_RESOURCE_FORM}`,
+              );
+            }
+          }}
         >
-          {t('Create UserDefinedNetwork')}
-        </ListPageCreateButton>
+          {t('Create')}
+        </ListPageCreateDropdown>
       </ListPageHeader>
       <ListPageBody>
         <ListPageFilter data={data} loaded={loaded} onFilterChange={onFilterChange} />
-        <VirtualizedTable<UserDefinedNetworkKind>
+        <VirtualizedTable<ClusterUserDefinedNetworkKind | UserDefinedNetworkKind>
           columns={columns}
           data={filteredData}
           loaded={loaded}
